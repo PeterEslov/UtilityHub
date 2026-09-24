@@ -1,0 +1,30 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+
+stages:
+  - stage: Build
+    jobs:
+      - job: BuildAndTest
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              version: '8.0.x'
+          - script: dotnet restore UtilityHub.sln
+            displayName: 'Restore'
+          - script: dotnet build UtilityHub.sln --configuration $(buildConfiguration) --no-restore
+            displayName: 'Build'
+          # - script: dotnet test --configuration $(buildConfiguration) --no-build
+          #   displayName: 'Test'
+          #   (aktiveras när testprojekt läggs till)
+
+  # Fas 4: lägg till en publish-stage per mini-API som bygger och pushar
+  # container-images till Azure Container Registry, samt en deploy-stage
+  # mot Azure Container Apps. Se roadmap-avsnittet i arkitekturspecen.

@@ -1,0 +1,36 @@
+services:
+  metercore-api:
+    build:
+      context: .
+      dockerfile: src/MeterCore.Api/Dockerfile
+    ports:
+      - "5101:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+
+  billflow-api:
+    build:
+      context: .
+      dockerfile: src/BillFlow.Api/Dockerfile
+    ports:
+      - "5102:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+
+  outagewatch-api:
+    build:
+      context: .
+      dockerfile: src/OutageWatch.Api/Dockerfile
+    ports:
+      - "5103:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+
+  customerdesk-api:
+    build:
+      context: .
+      dockerfile: src/CustomerDesk.Api/Dockerfile
+    ports:
+      - "5104:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
