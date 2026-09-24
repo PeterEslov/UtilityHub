@@ -19,4 +19,27 @@ public record UsageRecord
     public DateTimeOffset ReceivedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
-public record CreateUsageRecordRequest(string CustomerId, string SourceMeterId, double ConsumptionKwh, DateTimeOffset RecordedAt);
+public record CreateUsageRecordRequest(string CustomerId, string SourceMeterId, double ConsumptionKwh, DateTimeOffset RecordedAt)
+{
+    public IDictionary<string, string[]> Validate()
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        if (string.IsNullOrWhiteSpace(CustomerId))
+        {
+            errors[nameof(CustomerId)] = new[] { "CustomerId får inte vara tomt." };
+        }
+
+        if (string.IsNullOrWhiteSpace(SourceMeterId))
+        {
+            errors[nameof(SourceMeterId)] = new[] { "SourceMeterId får inte vara tomt." };
+        }
+
+        if (ConsumptionKwh < 0)
+        {
+            errors[nameof(ConsumptionKwh)] = new[] { "ConsumptionKwh kan inte vara negativt." };
+        }
+
+        return errors;
+    }
+}

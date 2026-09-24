@@ -15,4 +15,35 @@ public record MeterReading
     public bool IsEstimated { get; init; }
 }
 
-public record CreateMeterReadingRequest(string MeterId, string CustomerId, double ConsumptionKwh, bool IsEstimated = false);
+public record CreateMeterReadingRequest(string MeterId, string CustomerId, double ConsumptionKwh, bool IsEstimated = false)
+{
+    /// <summary>
+    /// Minimal APIs don't run DataAnnotations validation automatically the
+    /// way MVC controllers with [ApiController] do — there's no free "400 if
+    /// a field is missing". This is the explicit, readable alternative:
+    /// collect every problem found (not just the first one) into the shape
+    /// Results.ValidationProblem() expects, so a caller gets ALL their
+    /// mistakes back in one response instead of fixing them one at a time.
+    /// </summary>
+    public IDictionary<string, string[]> Validate()
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        if (string.IsNullOrWhiteSpace(MeterId))
+        {
+            errors[nameof(MeterId)] = new[] { "MeterId får inte vara tomt." };
+        }
+
+        if (string.IsNullOrWhiteSpace(CustomerId))
+        {
+            errors[nameof(CustomerId)] = new[] { "CustomerId får inte vara tomt." };
+        }
+
+        if (ConsumptionKwh < 0)
+        {
+            errors[nameof(ConsumptionKwh)] = new[] { "ConsumptionKwh kan inte vara negativt." };
+        }
+
+        return errors;
+    }
+}
