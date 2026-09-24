@@ -2,6 +2,11 @@ using OutageWatch.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddApplicationInsightsTelemetry();
+}
+
 builder.Services.AddSingleton<OutageStore>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

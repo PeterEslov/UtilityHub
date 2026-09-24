@@ -1,14 +1,29 @@
 # UtilityHub.Gateway
 
-Platshållare för Fas 2–3 av arkitekturspecen:
+Azure Functions-app (isolated worker, .NET 8) som utgör "forward"-steget i
+Fas 1:s transform-and-forward-pipeline mellan MeterCore och BillFlow.
 
-- **Fas 2**: Azure Functions som reagerar på Event Grid-händelser (t.ex. nytt
-  mätvärde → uppdatera förbrukningshistorik; avbrott registrerat → notifiera
-  CustomerDesk)
-- **Fas 3**: en Logic Apps Standard-workflow för "kund flyttar"-flödet, samt
-  Durable Functions för saga-/kompensationslogik
+**Vad den gör:** lyssnar på Service Bus-kön `meter-readings` (som
+`MeterCore.Api` publicerar till), transformerar meddelandet till det format
+`BillFlow.Api` förväntar sig, och POST:ar det till `/api/usage`.
 
-Ingen kod här ännu — mini-API:erna (`src/*.Api`) är grunden och byggs och
-körs fristående via `docker-compose`. Det här projektet fylls i när
-händelsedrivna flöden och orkestrering ska läggas till, se roadmap-avsnittet
-i arkitekturspecen.
+## Köra lokalt
+
+Kräver [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
+och Azurite (för funktionshostens eget lagringsbehov — `npm install -g azurite`
+eller VS Code-tillägget).
+
+1. Kopiera `local.settings.json.example` till `local.settings.json` (den
+   filen är avsiktligt gitignorad eftersom den brukar innehålla lokala
+   hemligheter, se repo-rotens `.gitignore`)
+2. Starta de fyra mini-API:erna + Service Bus-emulatorn: `docker compose up`
+   i repo-roten
+3. Starta Azurite i en egen terminal: `azurite`
+4. Starta funktionen: `func start` i den här mappen
+
+Posta ett nytt mätvärde mot MeterCore (`POST http://localhost:5101/api/meterreadings`)
+och se att det dyker upp i BillFlow (`GET http://localhost:5102/api/usage`)
+en liten stund senare — det är hela transform-and-forward-kedjan i praktiken.
+
+**Nästa fas (Fas 2)** bygger vidare på samma projekt med en Event
+Grid-triggad funktion för avbrottshändelser.

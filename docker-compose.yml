@@ -7,6 +7,12 @@ services:
       - "5101:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      # Dubbelt understreck är hur ASP.NET Core:s konfiguration mappar
+      # miljövariabler till nästlade appsettings-nycklar: det här sätter
+      # ServiceBus:ConnectionString utan att röra appsettings.json.
+      - ServiceBus__ConnectionString=Endpoint=sb://servicebus-emulator;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;
+    depends_on:
+      - servicebus-emulator
 
   billflow-api:
     build:
@@ -34,3 +40,32 @@ services:
       - "5104:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+
+  # --- Fas 1: lokal Service Bus-emulator ---
+  # Microsofts officiella emulator kräver en SQL-databas för sitt eget
+  # bokföringstillstånd (inte relaterat till UtilityHubs egna data).
+  sqledge:
+    container_name: sqledge
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "UtilityHub_Passw0rd!"
+
+  servicebus-emulator:
+    container_name: servicebus-emulator
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    volumes:
+      - ./infra/servicebus-config.json:/ServiceBus_Emulator/ConfigFiles/Config.json
+    ports:
+      - "5672:5672"
+    environment:
+      ACCEPT_EULA: "Y"
+      SQL_SERVER: sqledge
+      MSSQL_SA_PASSWORD: "UtilityHub_Passw0rd!"
+    depends_on:
+      - sqledge
+
+# OBS: Emulatorn är en relativt ny Microsoft-produkt (lanserad 2024). Om
+# containern inte startar som väntat, stäm av config-formatet mot Microsofts
+# aktuella dokumentation för "Service Bus emulator" innan du felsöker vidare
+# i egen kod — det är den delen jag är minst säker på att ha exakt rätt.

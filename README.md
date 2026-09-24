@@ -20,9 +20,20 @@ källsystem seedas med syntetisk data via [Bogus](https://github.com/bchavez/Bog
 Varje API är en egen container, körs oberoende, och seedar sin egen
 in-memory-data vid uppstart (se `DataStore.cs` i respektive projekt).
 
+## Fas 1: transform-and-forward (klart)
+
+`MeterCore.Api` publicerar ett `MeterReadingRecordedMessage` till Service
+Bus-kön `meter-readings` varje gång ett nytt mätvärde skapas. Funktionsappen
+`UtilityHub.Gateway` lyssnar på kön, transformerar meddelandet till det
+format `BillFlow.Api` förväntar sig, och POST:ar det till `/api/usage`.
+
+Lokalt körs Service Bus via Microsofts officiella emulator (i
+docker-compose); ingen riktig Azure-resurs behövs för att testa flödet.
+
 ## Köra lokalt
 
-Kräver Docker Desktop.
+Kräver Docker Desktop, samt [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
+och Azurite för att köra Gateway-funktionen (se `src/UtilityHub.Gateway/README.md`).
 
 ```bash
 docker compose up --build
@@ -37,7 +48,19 @@ curl http://localhost:5103/api/outages/active
 curl http://localhost:5104/api/customers
 ```
 
-Swagger UI finns på `/swagger` för respektive tjänst.
+Testa hela transform-and-forward-kedjan (kräver att Gateway-funktionen också
+körs, se dess README):
+
+```bash
+curl -X POST http://localhost:5101/api/meterreadings \
+  -H "Content-Type: application/json" \
+  -d '{"meterId":"MTR-00001","customerId":"CUST-00001","consumptionKwh":4.2}'
+
+# vänta någon sekund, kolla sedan att den dök upp i BillFlow:
+curl http://localhost:5102/api/usage
+```
+
+Swagger UI finns på `/swagger` för respektive API.
 
 ## Repo-struktur
 
@@ -48,9 +71,9 @@ UtilityHub/
 │   ├── BillFlow.Api/           (mini-API, egen container)
 │   ├── OutageWatch.Api/        (mini-API, egen container)
 │   ├── CustomerDesk.Api/       (mini-API, egen container)
-│   ├── UtilityHub.Gateway/     (Fas 2–3: Functions/Logic Apps, platshållare)
-│   └── UtilityHub.DataSeeder/  (Fas 1: databas-seedning, platshållare)
-├── infra/                      (Bicep, byggs ut fasvis)
+│   ├── UtilityHub.Gateway/     (Fas 1: Service Bus → transform → BillFlow)
+│   └── UtilityHub.DataSeeder/  (Fas 1+: databas-seedning, platshållare)
+├── infra/                      (Bicep + Service Bus-emulatorns config)
 ├── docker-compose.yml
 ├── azure-pipelines.yml
 └── UtilityHub.sln
@@ -58,10 +81,10 @@ UtilityHub/
 
 ## Status / roadmap
 
-Fas 0 (grund) är på plats: fyra körbara mini-API:er med syntetisk data,
-containeriserade, mono-repo, Azure DevOps-projekt `OresundskraftNorr`.
+- **Fas 0** (grund): klar — fyra körbara mini-API:er, containeriserade, mono-repo
+- **Fas 1** (transform-and-forward): klar — se ovan
+- **Fas 2** (pub/sub & koreografi): Event Grid för avbrottshändelser — näst på tur
+- **Fas 3** (orkestrering & saga): Logic Apps/Durable Functions för "kund flyttar"
+- **Fas 4** (gateway & polish): APIM + Azure Container Apps i molnet
 
-Nästa steg (Fas 1–4) finns beskrivna i arkitekturspecen: transform-and-forward
-mellan MeterCore och BillFlow via Service Bus, händelsedrivna flöden med Event
-Grid, orkestrering med Logic Apps/Durable Functions för "kund flyttar"-flödet,
-och till sist APIM + Azure Container Apps i molnet.
+Fullständig beskrivning av varje fas finns i arkitekturspecen.
