@@ -18,7 +18,8 @@ eller VS Code-tillägget).
    hemligheter, se repo-rotens `.gitignore`)
 2. Starta de fyra mini-API:erna + Service Bus-emulatorn: `docker compose up`
    i repo-roten
-3. Starta Azurite i en egen terminal: `azurite`
+3. Starta Azurite i en egen terminal, från repo-roten: `azurite --silent --location .azurite`
+   (mappen `.azurite/` är gitignorad, så tillståndsfilerna hamnar inte i git)
 4. Starta funktionen: `func start` i den här mappen
 
 Posta ett nytt mätvärde mot MeterCore (`POST http://localhost:5101/api/meterreadings`)

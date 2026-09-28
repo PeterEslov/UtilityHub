@@ -5,3 +5,10 @@ obj/
 .dockerignore
 **/appsettings.Development.json
 local.settings.json
+
+# Azurite-tillståndsfiler (startas lokalt för Functions-hosten)
+.azurite/
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/
+AzuriteConfig

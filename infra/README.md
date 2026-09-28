@@ -1,6 +1,6 @@
 # infra
 
-Bicep-mallar för UtilityHub/Öresundskraft Norr, byggs ut fasvis:
+Bicep-mallar för UtilityHub/Nordvik Energi, byggs ut fasvis:
 
 - **Fas 0**: inget cloud-infra ännu — allt körs lokalt via Docker Desktop
 - **Fas 1–3**: Service Bus (topics/subscriptions), Event Grid, Logic Apps

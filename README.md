@@ -1,90 +1,108 @@
-# UtilityHub — Öresundskraft Norr
+# UtilityHub
 
-Portfolio-projekt som visar enterprise-integrationsmönster på Azure: pub/sub,
-garanterad meddelandeleverans, orkestrering vs koreografi, saga-mönster,
-API-gateway och transform-and-forward. Fullständig arkitekturspec (scenario,
-mönster, roadmap) finns i det delade UtilityHub-dokumentet.
+En simulerad integrationsplattform för ett fiktivt energibolag, **Nordvik Energi**, byggd för att visa hur legacy-integrationer moderniseras i Azure: garanterad meddelandeleverans, transform-and-forward, pub/sub, orkestrering kontra koreografi, saga-mönster och API-gateway.
 
-Ingen riktig produktionsdata används någonstans i projektet — alla fyra
-källsystem seedas med syntetisk data via [Bogus](https://github.com/bchavez/Bogus).
+Portfolioprojekt av **Peter Larsson**. Idén kommer från arbete med att migrera BizTalk-integrationer till Azure. Ingen riktig kunddata används – alla källsystem seedas med syntetisk data via [Bogus](https://github.com/bchavez/Bogus).
+
+![UtilityHub – arkitektur](docs/images/utilityhub-arkitektur.png)
 
 ## Systemlandskap (simulerat)
 
-| System | Roll | Port (lokalt) |
-|---|---|---|
-| MeterCore.Api | Mätvärdesinsamling | 5101 |
-| BillFlow.Api | Fakturering | 5102 |
-| OutageWatch.Api | Avbrottshantering | 5103 |
-| CustomerDesk.Api | Kundtjänst-CRM | 5104 |
+Varje källsystem är ett eget mini-API i en egen container, som beter sig som ett fristående system.
 
-Varje API är en egen container, körs oberoende, och seedar sin egen
-in-memory-data vid uppstart (se `DataStore.cs` i respektive projekt).
+| System | Roll | Motsvarar i verkligheten | Port |
+| --- | --- | --- | --- |
+| `MeterCore.Api` | Mätvärdesinsamling | Mätdatasystem | 5101 |
+| `BillFlow.Api` | Fakturering och kundfordringar | Ekonomisystem | 5102 |
+| `OutageWatch.Api` | Avbrottshantering | Drift-/SCADA-liknande källa | 5103 |
+| `CustomerDesk.Api` | Kundtjänst | CRM | 5104 |
 
-## Fas 1: transform-and-forward (klart)
+## Flödet som fungerar i dag (Fas 1)
 
-`MeterCore.Api` publicerar ett `MeterReadingRecordedMessage` till Service
-Bus-kön `meter-readings` varje gång ett nytt mätvärde skapas. Funktionsappen
-`UtilityHub.Gateway` lyssnar på kön, transformerar meddelandet till det
-format `BillFlow.Api` förväntar sig, och POST:ar det till `/api/usage`.
+```mermaid
+flowchart LR
+    M[MeterCore.Api] -->|MeterReadingRecordedMessage| Q[[Service Bus-kö<br/>meter-readings]]
+    Q -->|ServiceBusTrigger| G[UtilityHub.Gateway<br/>Azure Function]
+    G -->|transform + POST /api/usage| B[BillFlow.Api]
+    Q -.->|efter MaxDeliveryCount| DLQ[[Dead-letter-kö]]
+```
 
-Lokalt körs Service Bus via Microsofts officiella emulator (i
-docker-compose); ingen riktig Azure-resurs behövs för att testa flödet.
+1. `MeterCore.Api` publicerar ett meddelande på kön `meter-readings` när ett nytt mätvärde registreras.
+2. Funktionen `ForwardMeterReadingToBilling` (isolated worker) triggas av kön, transformerar meddelandet till BillFlows format och skickar det vidare.
+3. Om BillFlow är nere kastas ett undantag, meddelandet läggs tillbaka i kön och försöks igen – och hamnar till slut i dead-letter-kön. Leveransgarantin kommer från Service Bus, inte från egen retry-kod.
+
+Kedjan är verifierad end-to-end: ett mätvärde postat mot MeterCore syns i BillFlow inom någon sekund.
+
+## Integrationsmönster
+
+| Mönster | Var | Status |
+| --- | --- | --- |
+| Garanterad leverans | Service Bus-kön `meter-readings` | ✅ Klart |
+| Transform-and-forward | MeterCore → Gateway → BillFlow | ✅ Klart |
+| Pub/sub och koreografi | Event Grid för avbrottshändelser (OutageWatch → CustomerDesk) | ⏭️ Nästa steg |
+| Orkestrering | Logic Apps för flödet "kund flyttar" | 🗓️ Planerat |
+| Saga och kompensation | Durable Functions för flerstegsprocesser | 🗓️ Planerat |
+| API-gateway | Azure API Management framför externa endpoints | 🗓️ Planerat |
+
+## Teknik
+
+.NET 8 · ASP.NET Core minimal API · Azure Functions (isolated worker) · Azure Service Bus (officiell emulator lokalt) · Docker Compose · Bogus · Bicep · Azure DevOps Pipelines · planerat: Event Grid, Logic Apps, Durable Functions, API Management, Azure Container Apps, Application Insights
 
 ## Köra lokalt
 
-Kräver Docker Desktop, samt [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
-och Azurite för att köra Gateway-funktionen (se `src/UtilityHub.Gateway/README.md`).
+**Krav:** Docker Desktop, [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local) och Azurite (`npm install -g azurite`).
 
 ```bash
+# 1. De fyra mini-API:erna + Service Bus-emulatorn
 docker compose up --build
+
+# 2. Azurite, i en egen terminal (lagring för Functions-hosten)
+azurite --silent --location .azurite
+
+# 3. Gateway-funktionen, i en tredje terminal
+cd src/UtilityHub.Gateway
+cp local.settings.json.example local.settings.json
+func start
 ```
 
-Sedan, t.ex.:
-
-```bash
-curl http://localhost:5101/api/meterreadings
-curl http://localhost:5102/api/invoices
-curl http://localhost:5103/api/outages/active
-curl http://localhost:5104/api/customers
-```
-
-Testa hela transform-and-forward-kedjan (kräver att Gateway-funktionen också
-körs, se dess README):
+Testa hela kedjan:
 
 ```bash
 curl -X POST http://localhost:5101/api/meterreadings \
   -H "Content-Type: application/json" \
   -d '{"meterId":"MTR-00001","customerId":"CUST-00001","consumptionKwh":4.2}'
 
-# vänta någon sekund, kolla sedan att den dök upp i BillFlow:
+# någon sekund senare:
 curl http://localhost:5102/api/usage
 ```
 
-Swagger UI finns på `/swagger` för respektive API.
+Swagger UI finns på `/swagger` för varje API.
+
+> **Nätverksdetalj:** Gateway-funktionen körs på värddatorn, utanför Docker-nätverket, så dess `ServiceBusConnection` pekar på `sb://localhost`. `MeterCore.Api` körs i en container och använder `sb://servicebus-emulator` via Compose-nätverkets DNS.
 
 ## Repo-struktur
 
 ```
 UtilityHub/
 ├── src/
-│   ├── MeterCore.Api/          (mini-API, egen container)
-│   ├── BillFlow.Api/           (mini-API, egen container)
-│   ├── OutageWatch.Api/        (mini-API, egen container)
-│   ├── CustomerDesk.Api/       (mini-API, egen container)
-│   ├── UtilityHub.Gateway/     (Fas 1: Service Bus → transform → BillFlow)
-│   └── UtilityHub.DataSeeder/  (Fas 1+: databas-seedning, platshållare)
-├── infra/                      (Bicep + Service Bus-emulatorns config)
+│   ├── MeterCore.Api/          mini-API, egen container
+│   ├── BillFlow.Api/           mini-API, egen container
+│   ├── OutageWatch.Api/        mini-API, egen container
+│   ├── CustomerDesk.Api/       mini-API, egen container
+│   ├── UtilityHub.Gateway/     Azure Function: Service Bus → transform → BillFlow
+│   └── UtilityHub.DataSeeder/  platshållare för databas-seedning
+├── infra/                      Bicep + Service Bus-emulatorns konfiguration
+├── docs/                       systemdokumentation och bilder
 ├── docker-compose.yml
-├── azure-pipelines.yml
-└── UtilityHub.sln
+└── azure-pipelines.yml
 ```
 
-## Status / roadmap
+## Roadmap
 
-- **Fas 0** (grund): klar — fyra körbara mini-API:er, containeriserade, mono-repo
-- **Fas 1** (transform-and-forward): klar — se ovan
-- **Fas 2** (pub/sub & koreografi): Event Grid för avbrottshändelser — näst på tur
-- **Fas 3** (orkestrering & saga): Logic Apps/Durable Functions för "kund flyttar"
-- **Fas 4** (gateway & polish): APIM + Azure Container Apps i molnet
+- [x] **Fas 0** – fyra containeriserade mini-API:er med syntetisk data, mono-repo
+- [x] **Fas 1** – transform-and-forward via Service Bus och Azure Functions
+- [ ] **Fas 2** – pub/sub och koreografi med Event Grid
+- [ ] **Fas 3** – orkestrering och saga: Logic Apps + Durable Functions för "kund flyttar"
+- [ ] **Fas 4** – API Management, Azure Container Registry och drift i Azure Container Apps
 
-Fullständig beskrivning av varje fas finns i arkitekturspecen.
+Fullständig beskrivning och ändringslogg finns i [`docs/UtilityHub-Systemdokumentation.docx`](docs/).
